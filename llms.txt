@@ -1,0 +1,149 @@
+# smphe — Semaphore UI CLI
+
+CLI for [Semaphore UI](https://semaphoreui.com/), an open-source web UI for running Ansible, Terraform, Bash, and Python automation tasks.
+
+Package: `@gzl10/semaphore-client`
+Install: `npm install -g @gzl10/semaphore-client`
+
+## Setup
+
+```bash
+smphe config set host http://semaphore.example.com:3000
+smphe login --token YOUR_API_TOKEN
+smphe use <projectId>   # set active project for all subsequent commands
+```
+
+## Project context
+
+Project ID is resolved in priority order:
+1. `--project <id>` flag on any command
+2. `SMPHE_PROJECT=<id>` environment variable
+3. Active project saved via `smphe use <id>`
+
+## JSON output
+
+All read commands accept `--json` for machine-readable output:
+
+```bash
+smphe tasks list --json | jq '.[].status'
+smphe templates list --json | jq '.[] | {id, name, playbook}'
+```
+
+## Commands
+
+### Setup
+```
+smphe config set host <url>     Set Semaphore host URL
+smphe config set token <token>  Set API token (prefer: smphe login --token)
+smphe config show               Show current config
+smphe login --token <token>     Save API token to config
+smphe use <projectId>           Set active project
+```
+
+### Projects
+```
+smphe projects list
+smphe projects get <id>
+smphe projects create --name <name>
+smphe projects update <id> --name <name>
+smphe projects delete <id>
+```
+
+### Templates (playbooks / runbooks)
+```
+smphe templates list
+smphe templates get <id>
+smphe templates create --name <name> --inventory-id <id> --repository-id <id> --environment-id <id> --playbook <file.yml>
+smphe templates update <id> [--name <name>] [--playbook <file>] [--app ansible|terraform|tofu|bash|python|powershell]
+smphe templates delete <id>
+```
+
+### Tasks (executions)
+```
+smphe tasks list [--status waiting|running|stopped|error|success]
+smphe tasks get <taskId>
+smphe tasks run <templateId> [--limit <hosts>] [--debug] [--dry-run] [--playbook <file>] [--environment <json>] [--arguments <str>]
+smphe tasks stop <taskId>
+smphe tasks output <taskId>
+```
+
+`tasks run` returns immediately with `status: "waiting"`. Poll with `tasks get` until `success` or `error`.
+
+### Keys (credentials / SSH keys)
+```
+smphe keys list
+smphe keys get <id>
+smphe keys create --name <name> --type none|ssh|login
+smphe keys update <id> [--name <name>] [--type none|ssh|login] [--private-key <content>] [--private-key-file <path>] [--login <user>] [--password <pass>]
+smphe keys delete <id>
+```
+
+### Inventory (host lists)
+```
+smphe inventory list
+smphe inventory get <id>
+smphe inventory create --name <name> --inventory <content> --type static|file|static-yaml --ssh-key-id <id>
+smphe inventory update <id> [--name <name>] [--inventory <content>] [--type <type>] [--ssh-key-id <id>]
+smphe inventory delete <id>
+```
+
+### Environment (variable groups / secrets)
+```
+smphe environment list
+smphe environment get <id>
+smphe environment create --name <name> [--password <vault-key>]
+smphe environment update <id> [--name <name>] [--password <vault-key>]
+smphe environment delete <id>
+```
+
+`--password` is the ansible-vault encryption key for the variable group, not an auth password.
+
+### Repositories
+```
+smphe repositories list
+smphe repositories get <id>
+smphe repositories create --name <name> --git-url <url> --git-branch <branch> --ssh-key-id <id>
+smphe repositories update <id> [--name <name>] [--git-url <url>] [--git-branch <branch>] [--ssh-key-id <id>]
+smphe repositories delete <id>
+```
+
+### Schedules
+```
+smphe schedules list
+smphe schedules get <id>
+smphe schedules create --template-id <id> --cron "0 2 * * *"
+smphe schedules update <id> [--cron <format>] [--enabled] [--no-enabled]
+smphe schedules delete <id>
+```
+
+`--no-enabled` pauses a schedule without deleting it. `--enabled` reactivates it.
+
+### Users
+```
+smphe users list
+smphe users get <id>
+```
+
+## Typical agent workflow
+
+```bash
+# 1. Discover what playbooks are available
+smphe templates list --json
+
+# 2. Run a playbook
+smphe tasks run 42 --limit webservers --json
+# → {"id": 123, "status": "waiting", ...}
+
+# 3. Poll until done
+smphe tasks get 123 --json | jq '.status'
+# → "running" ... "success"
+
+# 4. Get output on failure
+smphe tasks output 123
+
+# 5. Pause a schedule temporarily
+smphe schedules update 7 --no-enabled
+
+# 6. Re-enable it
+smphe schedules update 7 --enabled
+```

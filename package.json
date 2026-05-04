@@ -1,0 +1,57 @@
+{
+  "name": "@gzl10/semaphore-client",
+  "version": "0.2.6",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "smphe": "./dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:test": "tsc -p tsconfig.test.json",
+    "dev": "tsc --watch",
+    "test": "tsc -p tsconfig.test.json && node --test dist/tests/*.test.js dist/tests/cli/*.test.js",
+    "test:integration": "tsc -p tsconfig.test.json && node --env-file=tests/integration/.env --test dist/tests/integration/",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "prepublishOnly": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gzl10g/semaphore-client.git"
+  },
+  "license": "MIT",
+  "funding": "https://www.buymeacoffee.com/gzl10g",
+  "keywords": [
+    "semaphore",
+    "ansible",
+    "api",
+    "client",
+    "typed",
+    "automation"
+  ],
+  "files": [
+    "dist",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^20.0.0",
+    "eslint": "^10.2.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.58.0"
+  },
+  "dependencies": {
+    "commander": "^14.0.3"
+  }
+}

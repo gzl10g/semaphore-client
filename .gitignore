@@ -1,0 +1,6 @@
+dist/
+node_modules/
+*.env
+tests/integration/.env
+!tests/fixtures/*.env
+.worktrees/
