@@ -1,0 +1,214 @@
+# smphe — Semaphore UI CLI
+
+CLI for [Semaphore UI](https://semaphoreui.com/), an open-source web UI for running Ansible, Terraform, Bash, and Python automation tasks.
+
+Package: `@gzl10/semaphore-client`
+Install: `npm install -g @gzl10/semaphore-client`
+
+## Setup
+
+```bash
+smphe config set host http://semaphore.example.com:3000
+smphe login --token YOUR_API_TOKEN
+smphe use <projectId>   # set active project for all subsequent commands
+```
+
+## Project context
+
+Project ID is resolved in priority order:
+1. `--project <id>` flag on any command
+2. `SMPHE_PROJECT=<id>` environment variable
+3. Active project saved via `smphe use <id>`
+
+## JSON output
+
+All read commands accept `--json` for machine-readable output:
+
+```bash
+smphe tasks list --json | jq '.[].status'
+smphe templates list --json | jq '.[] | {id, name, playbook}'
+```
+
+## Commands
+
+### Setup
+```
+smphe config set host <url>     Set Semaphore host URL
+smphe config set token <token>  Set API token (prefer: smphe login --token)
+smphe config show               Show current config
+smphe login --token <token>     Save API token to config
+smphe use <projectId>           Set active project
+```
+
+### Projects
+```
+smphe projects list
+smphe projects get <id>
+smphe projects create --name <name>
+smphe projects update <id> --name <name>
+smphe projects delete <id>
+```
+
+### Templates (playbooks / runbooks)
+```
+smphe templates list
+smphe templates get <id>
+smphe templates create --name <name> --inventory-id <id> --repository-id <id> --environment-id <id> --playbook <file.yml>
+smphe templates update <id> [--name <name>] [--playbook <file>] [--app ansible|terraform|tofu|bash|python|powershell]
+smphe templates delete <id>
+```
+
+### Tasks (executions)
+```
+smphe tasks list [--status waiting|running|stopped|error|success]
+smphe tasks get <taskId>
+smphe tasks run <templateId> [--limit <hosts>] [--debug] [--dry-run] [--playbook <file>] [--environment <json>] [--arguments <str>]
+smphe tasks stop <taskId>
+smphe tasks output <taskId>
+```
+
+`tasks run` returns immediately with `status: "waiting"`. Poll with `tasks get` until `success` or `error`.
+
+### Keys (credentials / SSH keys)
+```
+smphe keys list
+smphe keys get <id>
+smphe keys create --name <name> --type none|ssh|login
+smphe keys update <id> [--name <name>] [--type none|ssh|login] [--private-key <content>] [--private-key-file <path>] [--login <user>] [--password <pass>]
+smphe keys delete <id>
+```
+
+### Inventory (host lists)
+```
+smphe inventory list
+smphe inventory get <id>
+smphe inventory create --name <name> --inventory <content> --type static|file|static-yaml [--ssh-key-id <id>]
+smphe inventory update <id> [--name <name>] [--inventory <content>] [--type <type>] [--ssh-key-id <id>]
+smphe inventory delete <id>
+```
+
+`--ssh-key-id` is optional: a static inventory works without a key (the API
+returns `ssh_key_id: null`). Give it only when the inventory needs credentials.
+
+### Environment (variable groups / secrets)
+```
+smphe environment list
+smphe environment get <id>
+smphe environment create --name <name> [--password <vault-key>]
+smphe environment update <id> [--name <name>] [--password <vault-key>]
+smphe environment delete <id>
+```
+
+`--password` is the ansible-vault encryption key for the variable group, not an auth password.
+
+### Repositories
+```
+smphe repositories list
+smphe repositories get <id>
+smphe repositories create --name <name> --git-url <url> --git-branch <branch> --ssh-key-id <id>
+smphe repositories update <id> [--name <name>] [--git-url <url>] [--git-branch <branch>] [--ssh-key-id <id>]
+smphe repositories delete <id>
+```
+
+### Schedules
+```
+smphe schedules list
+smphe schedules get <id>
+smphe schedules create --template-id <id> --cron "0 2 * * *"
+smphe schedules update <id> [--cron <format>] [--enabled] [--no-enabled]
+smphe schedules delete <id>
+```
+
+`--no-enabled` pauses a schedule without deleting it. `--enabled` reactivates it.
+
+### Workflows (chains of templates, Semaphore >= 2.19)
+```
+smphe workflows list
+smphe workflows get <id>
+smphe workflows create --file <graph.json> [--name <name>]
+smphe workflows update <id> [--file <graph.json>] [--name <name>]
+smphe workflows delete <id>
+smphe workflows run <id>
+smphe workflows runs <id>
+smphe workflows stop <id> <runId>
+smphe workflows approvals <id> <runId>
+smphe workflows approve <id> <runId> <nodeId>
+smphe workflows reject <id> <runId> <nodeId>
+```
+
+A workflow is a graph of task templates that runs as one unit, with optional
+approval gates. Graph file format:
+
+```json
+{
+  "name": "deploy-with-approval",
+  "nodes": [
+    { "id": 1, "kind": "task", "templateId": 5 },
+    { "id": 2, "kind": "approval", "approvalMessage": "Ship it?" },
+    { "id": 3, "kind": "task", "templateId": 8 }
+  ],
+  "edges": [
+    { "sourceNodeId": 1, "destinationNodeId": 2, "condition": "on_success" },
+    { "sourceNodeId": 2, "destinationNodeId": 3, "condition": "on_success" }
+  ]
+}
+```
+
+Node `kind`: `task` (needs `templateId`), `approval` (gate; optional
+`approvalMessage` and `approvalTimeout`) or `note` (annotation).
+Edge `condition`: `on_success`, `on_failure` or `always`.
+
+Gotchas:
+- Node `id` is client-side and only wires the edges — the server assigns the
+  real ids. It is REQUIRED as soon as the graph has edges, or the API answers
+  `workflow edge source node does not belong to workflow`.
+- The graph needs exactly one root node (a node no edge points to).
+- `run` returns `root_task_id`: follow it with `smphe tasks output <id>`.
+- A run stops at an approval gate with status `approval`; list the pending
+  gates with `workflows approvals` and resolve them with `approve`/`reject`.
+- These endpoints answer on any 2.19 server, but a build with the feature
+  disabled serves a stub: `list` returns an empty table and the rest 404.
+
+### Backup (whole-project export/import)
+```
+smphe backup export [--file <path>]
+smphe backup restore --file <path>
+```
+
+Semaphore has no config-as-code (upstream issue #3109), so this is the closest
+thing to keeping a project under version control. `export` without `--file`
+prints JSON to stdout; with `--file` it writes it with mode 600.
+
+`restore` always creates a NEW project, it never overwrites an existing one.
+Secrets are not exported in plain text: a restored project needs its keys and
+secret values set again.
+
+### Users
+```
+smphe users list
+smphe users get <id>
+```
+
+## Typical agent workflow
+
+```bash
+# 1. Discover what playbooks are available
+smphe templates list --json
+
+# 2. Run a playbook
+smphe tasks run 42 --limit webservers --json
+# → {"id": 123, "status": "waiting", ...}
+
+# 3. Poll until done
+smphe tasks get 123 --json | jq '.status'
+# → "running" ... "success"
+
+# 4. Get output on failure
+smphe tasks output 123
+
+# 5. Pause a schedule temporarily
+smphe schedules update 7 --no-enabled
+
+# 6. Re-enable it
+smphe schedules update 7 --enabled
+```
